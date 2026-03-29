@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check Foxwoods booking results for complimentary / $0 rates on a given stay date.
+Check Foxwoods booking results for complimentary / $0 rates on one or more stay dates.
 
 Setup:
   pip install -r requirements.txt
@@ -23,7 +23,7 @@ Optional alerts when free rooms are found (only if free/comp rooms are listed):
   Override SMTP password with env FOXWOODS_SMTP_PASSWORD.
 
 Usage:
-  python check_free_rooms.py 2026-04-15
+  python check_free_rooms.py 2026-04-15 2026-04-16 2026-04-17
   python check_free_rooms.py 2026-04-15 --nights 2 --headed
   python check_free_rooms.py 2026-04-15 --skip-login
 """
@@ -359,8 +359,12 @@ def _room_is_free(amount_attr: str, price_text: str, block_text: str) -> bool:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Find $0 / comp Foxwoods room offers for a date.")
-    p.add_argument("check_in", help="Check-in date (YYYY-MM-DD or MM/DD/YYYY)")
+    p = argparse.ArgumentParser(description="Find $0 / comp Foxwoods room offers for one or more dates.")
+    p.add_argument(
+        "check_in",
+        nargs="+",
+        help="One or more check-in dates (YYYY-MM-DD or MM/DD/YYYY)",
+    )
     p.add_argument("--nights", type=int, default=1, help="Length of stay in nights (default: 1)")
     p.add_argument(
         "--hotels",
@@ -388,10 +392,13 @@ def main() -> None:
     if args.nights < 1:
         raise SystemExit("--nights must be at least 1")
 
-    check_in = _parse_check_in(args.check_in)
-    check_out = check_in + timedelta(days=args.nights)
-    arrival = check_in.strftime("%Y-%m-%d")
-    departure = check_out.strftime("%Y-%m-%d")
+    stays: list[tuple[str, str]] = []
+    for raw_date in args.check_in:
+        check_in = _parse_check_in(raw_date)
+        check_out = check_in + timedelta(days=args.nights)
+        arrival = check_in.strftime("%Y-%m-%d")
+        departure = check_out.strftime("%Y-%m-%d")
+        stays.append((arrival, departure))
 
     cfg = _load_config(args.config)
     email = str(cfg.get("email", "") or "").strip()
@@ -404,10 +411,6 @@ def main() -> None:
                 "foxwoods_config.example.json), set FOXWOODS_EMAIL / FOXWOODS_PASSWORD, "
                 "or pass --skip-login."
             )
-
-    reserve_url = (
-        f"{BOOKING_BASE}?hotels={args.hotels}&arrival={arrival}&departure={departure}"
-    )
 
     from playwright.sync_api import sync_playwright
 
@@ -424,47 +427,55 @@ def main() -> None:
         try:
             if not args.skip_login:
                 _login(page, email, password)
-            page.goto(reserve_url, wait_until="domcontentloaded")
-            _maybe_dismiss_overlays(page)
-            _ensure_results(page)
-
-            rooms = page.locator(".room-details")
-            count = rooms.count()
-            if count == 0:
-                print("No room result cards found.")
-                return
-
-            free_hits: list[str] = []
-            for i in range(count):
-                card = rooms.nth(i)
-                amt = (card.get_attribute("data-amount") or "").strip()
-                hotel = card.locator(".room-details__hotel-name").inner_text().strip()
-                rname = card.locator(".room-details__room-name").inner_text().strip()
-                try:
-                    price_el = card.locator(".room-details__price-amount")
-                    price_txt = price_el.inner_text().strip()
-                except Exception:
-                    price_txt = ""
-                block = f"{hotel} | {rname} | {price_txt}"
-                if _room_is_free(amt, price_txt, block):
-                    line = f"  * {hotel} - {rname} - data-amount={amt!r} display={price_txt!r}"
-                    free_hits.append(line)
-
-            print(f"Stay: {arrival} -> {departure} ({args.nights} night(s))")
-            print(f"Hotels: {args.hotels}")
-            print(f"Total result cards: {count}")
-            if free_hits:
-                print("Possible free / comp matches:")
-                print("\n".join(free_hits))
-                if not args.no_notify:
-                    warns = _notify_free_rooms(cfg, arrival, departure, args.nights, free_hits)
-                    for w in warns:
-                        print(w, file=sys.stderr)
-            else:
-                print(
-                    "No $0 or comp-labeled rooms found in listed results. "
-                    "(Rates change; try another date or verify account offers.)"
+            for idx, (arrival, departure) in enumerate(stays):
+                reserve_url = (
+                    f"{BOOKING_BASE}?hotels={args.hotels}&arrival={arrival}&departure={departure}"
                 )
+                page.goto(reserve_url, wait_until="domcontentloaded")
+                _maybe_dismiss_overlays(page)
+                _ensure_results(page)
+
+                rooms = page.locator(".room-details")
+                count = rooms.count()
+
+                if idx > 0:
+                    print()
+                print(f"Stay: {arrival} -> {departure} ({args.nights} night(s))")
+                print(f"Hotels: {args.hotels}")
+
+                if count == 0:
+                    print("No room result cards found.")
+                    continue
+
+                free_hits: list[str] = []
+                for i in range(count):
+                    card = rooms.nth(i)
+                    amt = (card.get_attribute("data-amount") or "").strip()
+                    hotel = card.locator(".room-details__hotel-name").inner_text().strip()
+                    rname = card.locator(".room-details__room-name").inner_text().strip()
+                    try:
+                        price_el = card.locator(".room-details__price-amount")
+                        price_txt = price_el.inner_text().strip()
+                    except Exception:
+                        price_txt = ""
+                    block = f"{hotel} | {rname} | {price_txt}"
+                    if _room_is_free(amt, price_txt, block):
+                        line = f"  * {hotel} - {rname} - data-amount={amt!r} display={price_txt!r}"
+                        free_hits.append(line)
+
+                print(f"Total result cards: {count}")
+                if free_hits:
+                    print("Possible free / comp matches:")
+                    print("\n".join(free_hits))
+                    if not args.no_notify:
+                        warns = _notify_free_rooms(cfg, arrival, departure, args.nights, free_hits)
+                        for w in warns:
+                            print(w, file=sys.stderr)
+                else:
+                    print(
+                        "No $0 or comp-labeled rooms found in listed results. "
+                        "(Rates change; try another date or verify account offers.)"
+                    )
         finally:
             browser.close()
 
