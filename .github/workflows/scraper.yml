@@ -5,6 +5,10 @@ on:
     # This runs every 10 minutes
     - cron: '*/10 * * * *'
   workflow_dispatch: # Allows you to run it manually for testing
+    check_in:
+      description: 'Check-in date (YYYY-MM-DD)'
+      required: true
+      default: '2026-04-01'
 
 jobs:
   build:
@@ -21,9 +25,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
+          playwright install chromium
 
       - name: Run script
-        run: python check_free_rooms.py 2026-04-01
+        run: python check_free_rooms.py
         env:
           FOXWOODS_CONFIG_B64: ${{ secrets.FOXWOODS_CONFIG_B64 }}
           FOXWOODS_CONFIG: ${{ secrets.FOXWOODS_CONFIG }}
