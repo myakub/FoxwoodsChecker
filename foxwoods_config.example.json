@@ -1,0 +1,23 @@
+{
+  "email": "your-foxwoods-login@example.com",
+  "password": "your-foxwoods-password",
+
+  "notify_email": "your-inbox@example.com",
+  "notify_sms_email": "",
+  "notify_phone": "",
+
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "user": "your-inbox@example.com",
+    "password": "gmail-app-password",
+    "from": "your-inbox@example.com",
+    "use_tls": true
+  },
+
+  "twilio": {
+    "account_sid": "",
+    "auth_token": "",
+    "from": "+12025550100"
+  }
+}
