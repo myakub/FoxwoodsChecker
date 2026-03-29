@@ -2,13 +2,7 @@ name: 10-Minute Scraper
 
 on:
   schedule:
-    # This runs every 10 minutes
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Allows you to run it manually for testing
-    check_in:
-      description: 'Check-in date (YYYY-MM-DD)'
-      required: true
-      default: '2026-04-01'
 
 jobs:
   build:
@@ -28,7 +22,6 @@ jobs:
           playwright install chromium
 
       - name: Run script
-        run: python check_free_rooms.py
+        run: python check_free_rooms.py ${{ vars.FOXWOODS_CHECK_IN }}
         env:
-          FOXWOODS_CONFIG_B64: ${{ secrets.FOXWOODS_CONFIG_B64 }}
           FOXWOODS_CONFIG: ${{ secrets.FOXWOODS_CONFIG }}
