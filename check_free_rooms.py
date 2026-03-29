@@ -10,6 +10,12 @@ Authentication (for member rates and comp rooms):
   Create foxwoods_config.json (see foxwoods_config.example.json) next to this script,
   or set FOXWOODS_EMAIL / FOXWOODS_PASSWORD. Environment variables override the file.
 
+  To pass the entire config as a single secret (e.g. GitHub Actions):
+    FOXWOODS_CONFIG_B64  – full foxwoods_config.json contents, base64-encoded (recommended)
+    FOXWOODS_CONFIG      – full foxwoods_config.json contents as a raw JSON string
+  Individual overrides (FOXWOODS_EMAIL, FOXWOODS_PASSWORD, FOXWOODS_SMTP_PASSWORD)
+  are always applied on top of whichever source was used.
+
 Optional alerts when free rooms are found (only if free/comp rooms are listed):
   notify_email: inbox address. notify_sms_email: carrier SMS gateway address.
   notify_phone: E.164 mobile for Twilio, OR an SMS gateway email like 5551234567@vtext.com (SMTP).
@@ -54,22 +60,54 @@ def _config_paths(explicit: str | None) -> list[Path]:
 
 
 def _load_config(config_arg: str | None) -> dict[str, Any]:
-    """Load JSON config; FOXWOODS_* and FOXWOODS_SMTP_PASSWORD env vars override."""
+    """Load JSON config; priority order (highest to lowest):
+      1. FOXWOODS_CONFIG_B64  – full config as base64-encoded JSON (GitHub Secret friendly)
+      2. FOXWOODS_CONFIG      – full config as a raw JSON string
+      3. JSON file (--config PATH, or foxwoods_config.json next to script / in cwd)
+      4. Individual FOXWOODS_EMAIL / FOXWOODS_PASSWORD / FOXWOODS_SMTP_PASSWORD overrides
+    """
     raw: dict[str, Any] = {}
-    paths = _config_paths(config_arg)
-    if config_arg and not paths[0].is_file():
-        raise SystemExit(f"Config file not found: {paths[0]}")
-    for path in paths:
-        if not path.is_file():
-            continue
+
+    # 1. Full config from base64 env var (highest priority — ideal for GitHub Secrets)
+    config_b64 = os.environ.get("FOXWOODS_CONFIG_B64", "").strip()
+    if config_b64:
         try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
-            raise SystemExit(f"Could not read config {path}: {e}") from e
+            decoded = base64.b64decode(config_b64).decode("utf-8")
+            loaded = json.loads(decoded)
+        except Exception as e:
+            raise SystemExit(f"Could not decode FOXWOODS_CONFIG_B64: {e}") from e
         if not isinstance(loaded, dict):
-            raise SystemExit(f"Config {path} must be a JSON object.")
+            raise SystemExit("FOXWOODS_CONFIG_B64 must decode to a JSON object.")
         raw = loaded
-        break
+
+    # 2. Full config as raw JSON string env var
+    elif os.environ.get("FOXWOODS_CONFIG", "").strip():
+        try:
+            loaded = json.loads(os.environ["FOXWOODS_CONFIG"])
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"Could not parse FOXWOODS_CONFIG as JSON: {e}") from e
+        if not isinstance(loaded, dict):
+            raise SystemExit("FOXWOODS_CONFIG must be a JSON object.")
+        raw = loaded
+
+    # 3. JSON file on disk
+    else:
+        paths = _config_paths(config_arg)
+        if config_arg and not paths[0].is_file():
+            raise SystemExit(f"Config file not found: {paths[0]}")
+        for path in paths:
+            if not path.is_file():
+                continue
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                raise SystemExit(f"Could not read config {path}: {e}") from e
+            if not isinstance(loaded, dict):
+                raise SystemExit(f"Config {path} must be a JSON object.")
+            raw = loaded
+            break
+
+    # 4. Individual env var overrides (always applied on top of whatever was loaded)
     if os.environ.get("FOXWOODS_EMAIL", "").strip():
         raw["email"] = os.environ["FOXWOODS_EMAIL"].strip()
     if os.environ.get("FOXWOODS_PASSWORD"):
@@ -80,8 +118,9 @@ def _load_config(config_arg: str | None) -> dict[str, Any]:
             smtp = {}
             raw["smtp"] = smtp
         smtp["password"] = os.environ["FOXWOODS_SMTP_PASSWORD"]
-    return raw
 
+    return raw
+    
 
 def _build_notification_body(
     arrival: str,

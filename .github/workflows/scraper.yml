@@ -23,9 +23,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run script
-        run: python check_free_rooms.py
+        run: python check_free_rooms.py 2026-04-01
         env:
-          # If your script needs API keys or logins, add them in Repo Settings > Secrets
-          FOXWOODS_EMAIL: ${{ secrets.FOXWOODS_EMAIL }}
-          FOXWOODS_PASSWORD: ${{ secrets.FOXWOODS_PASSWORD }}
-          FOXWOODS_SMTP_PASSWORD: ${{ secrets.FOXWOODS_SMTP_PASSWORD }}
+          FOXWOODS_CONFIG_B64: ${{ secrets.FOXWOODS_CONFIG_B64 }}
+          FOXWOODS_CONFIG: ${{ secrets.FOXWOODS_CONFIG }}
