@@ -358,6 +358,11 @@ def _room_is_free(amount_attr: str, price_text: str, block_text: str) -> bool:
     return False
 
 
+def _status(msg: str) -> None:
+    now = datetime.now().strftime("%H:%M:%S")
+    print(f"[{now}] {msg}", flush=True)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Find $0 / comp Foxwoods room offers for one or more dates.")
     p.add_argument(
@@ -392,6 +397,8 @@ def main() -> None:
     if args.nights < 1:
         raise SystemExit("--nights must be at least 1")
 
+    _status("Parsing date inputs...")
+
     stays: list[tuple[str, str]] = []
     for raw_date in args.check_in:
         check_in = _parse_check_in(raw_date)
@@ -414,6 +421,10 @@ def main() -> None:
 
     from playwright.sync_api import sync_playwright
 
+    _status(
+        f"Starting browser and preparing to check {len(stays)} date(s) for hotels={args.hotels}"
+    )
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not args.headed)
         context = browser.new_context(
@@ -426,8 +437,13 @@ def main() -> None:
         page = context.new_page()
         try:
             if not args.skip_login:
+                _status("Logging in...")
                 _login(page, email, password)
+                _status("Logged in.")
+            else:
+                _status("Skipping login (--skip-login).")
             for idx, (arrival, departure) in enumerate(stays):
+                _status(f"Checking stay {idx + 1}/{len(stays)}: {arrival} -> {departure}")
                 reserve_url = (
                     f"{BOOKING_BASE}?hotels={args.hotels}&arrival={arrival}&departure={departure}"
                 )
@@ -445,6 +461,7 @@ def main() -> None:
 
                 if count == 0:
                     print("No room result cards found.")
+                    _status(f"No result cards for {arrival} -> {departure}.")
                     continue
 
                 free_hits: list[str] = []
@@ -467,15 +484,23 @@ def main() -> None:
                 if free_hits:
                     print("Possible free / comp matches:")
                     print("\n".join(free_hits))
+                    _status(f"Found {len(free_hits)} free/comp match(es) for {arrival} -> {departure}.")
                     if not args.no_notify:
+                        _status("Sending notifications...")
                         warns = _notify_free_rooms(cfg, arrival, departure, args.nights, free_hits)
                         for w in warns:
                             print(w, file=sys.stderr)
+                        if warns:
+                            _status("Notifications completed with warnings.")
+                        else:
+                            _status("Notifications sent.")
                 else:
                     print(
                         "No $0 or comp-labeled rooms found in listed results. "
                         "(Rates change; try another date or verify account offers.)"
                     )
+                    _status(f"No free/comp matches for {arrival} -> {departure}.")
+            _status("Finished checking all requested dates.")
         finally:
             browser.close()
 
