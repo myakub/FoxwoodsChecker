@@ -1,0 +1,31 @@
+name: 10-Minute Scraper
+
+on:
+  schedule:
+    # This runs every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows you to run it manually for testing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run script
+        run: python check_free_rooms.py
+        env:
+          # If your script needs API keys or logins, add them in Repo Settings > Secrets
+          FOXWOODS_EMAIL: ${{ secrets.FOXWOODS_EMAIL }}
+          FOXWOODS_PASSWORD: ${{ secrets.FOXWOODS_PASSWORD }}
+          FOXWOODS_SMTP_PASSWORD: ${{ secrets.FOXWOODS_SMTP_PASSWORD }}
