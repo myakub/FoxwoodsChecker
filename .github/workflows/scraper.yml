@@ -3,6 +3,7 @@ name: 10-Minute Scraper
 on:
   schedule:
     - cron: '*/10 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
